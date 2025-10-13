@@ -43,7 +43,7 @@ handwriting-plagiarism-detector/
 
 ```bash
 # Clona il repository
-git clone <your-repo-url>
+git clone https://github.com/Fede-Berga/handwriting-plagiarism-detector
 cd handwriting-plagiarism-detector
 
 # Installa dipendenze con uv
