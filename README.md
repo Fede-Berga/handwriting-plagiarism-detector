@@ -146,13 +146,6 @@ uv run pytest tests/test_detector.py::test_feature_extraction
 5. **Clustering**: DBSCAN per identificare gruppi
 6. **Report**: Generazione risultati e visualizzazioni
 
-## ⚠️ Limitazioni
-
-- Richiede scansioni di qualità decente
-- Funziona meglio con scrittura in corsivo
-- Non sostituisce la valutazione umana
-- Può avere falsi positivi con grafie simili naturalmente
-
 ## 📄 Licenza
 
 MIT License
