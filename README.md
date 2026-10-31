@@ -1,159 +1,79 @@
-# 📝 Handwriting Plagiarism Detector
+# handwriting-plagiarism-detector
 
-Sistema per rilevare possibili plagi analizzando la grafia in PDF manoscritti di esercizi di fisica.
+Compares the handwriting in scanned PDF exercise sheets and ranks the pairs and groups of documents that may have been written by the same hand, for a teacher to review.
 
-## 🏗️ Struttura del Progetto
+[![CI](https://github.com/Fede-Berga/handwriting-plagiarism-detector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fede-Berga/handwriting-plagiarism-detector/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 
-```
-handwriting-plagiarism-detector/
-├── pyproject.toml              # Configurazione uv e dipendenze
-├── README.md                   # Questo file
-├── .gitignore                  # File da ignorare in git
-├── .python-version             # Versione Python (3.11)
-├── src/
-│   └── handwriting_detector/
-│       ├── __init__.py
-│       ├── main.py            # Entry point principale
-│       ├── pdf_processor.py   # Gestione PDF
-│       ├── feature_extractor.py  # Estrazione features
-│       ├── comparator.py      # Confronto e clustering
-│       └── visualizer.py      # Visualizzazione risultati
-├── tests/
-│   ├── __init__.py
-│   └── test_detector.py       # Test unitari
-├── data/
-│   ├── input/                 # PDF da analizzare (gitignored)
-│   └── output/                # Risultati (gitignored)
-└── notebooks/
-    └── analysis.ipynb         # Jupyter notebook per analisi
+It was written to screen handwritten physics exercises handed in as scans. If one person writes several students' sheets, those pages should share stroke, slant and spacing statistics; the tool measures them and points at the documents worth comparing by eye.
 
-```
+## Quick start
 
-## 🚀 Installazione
+Prerequisites:
 
-### Prerequisiti
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) installato
-- Poppler (per pdf2image):
-  - Ubuntu/Debian: `sudo apt-get install poppler-utils`
-  - macOS: `brew install poppler`
-  - Windows: Scarica da [poppler windows](https://github.com/oschwartz10612/poppler-windows/releases/)
+- Python 3.11 or newer (tested with 3.13)
+- [uv](https://docs.astral.sh/uv/) (tested with 0.13.6)
+- Poppler, which pdf2image calls to render pages (tested with 26.10): `brew install poppler` on macOS, `sudo apt-get install poppler-utils` on Debian and Ubuntu
 
-### Setup
-
-```bash
-# Clona il repository
-git clone https://github.com/Fede-Berga/handwriting-plagiarism-detector
+```sh
+git clone https://github.com/Fede-Berga/handwriting-plagiarism-detector.git
 cd handwriting-plagiarism-detector
-
-# Installa dipendenze con uv
-uv sync
-
-# Attiva l'ambiente virtuale
-source .venv/bin/activate  # Linux/macOS
-# oppure
-.venv\Scripts\activate  # Windows
+uv sync --python 3.13 --extra dev
 ```
 
-## 📊 Utilizzo
+Put one PDF per submission in `data/input/`, then run:
 
-### 1. Preparazione Dati
-Inserisci i PDF degli studenti nella cartella `data/input/`:
-```
-data/input/
-├── studente_mario_rossi.pdf
-├── studente_lucia_verdi.pdf
-└── ...
+```sh
+uv run python -m handwriting_detector.main data/input --output data/output
 ```
 
-### 2. Analisi Base
-```bash
-# Esegui l'analisi completa
-uv run python -m handwriting_detector.main
+Options: `--threshold`/`-t` sets the similarity above which a pair is flagged (default 0.85), `--dpi` the rendering resolution (default 300), `--output`/`-o` the output folder (default `data/output`), and `--verbose`/`-v` enables debug logging. Flagged pairs are logged as warnings, and the output folder receives:
 
-# Con opzioni personalizzate
-uv run python -m handwriting_detector.main --threshold 0.85 --dpi 300
-```
+- `similarity_matrix.png`: heatmap of every pairwise score
+- `suspicious_pairs.csv`: the ten highest-scoring pairs, whatever their score
+- `clusters.png`: size and internal similarity of each group, only when a group was found
+- `report.html`: summary statistics, top pairs and groups (the page text is in Italian)
 
-### 3. Analisi Avanzata
+Documents are named after their PDF files. The same pipeline is available from Python:
+
 ```python
 from handwriting_detector import HandwritingDetector
 
-# Inizializza il detector
-detector = HandwritingDetector()
-
-# Analizza tutti i PDF
-results = detector.analyze_folder("data/input")
-
-# Trova gruppi sospetti
-suspicious_groups = detector.find_plagiarism_groups(
-    similarity_threshold=0.85,
-    min_group_size=2
-)
-
-# Visualizza report
-detector.generate_report("data/output/report.html")
+detector = HandwritingDetector(dpi=300, similarity_threshold=0.85)
+results = detector.analyze_folder("data/input", "data/output")
+results["top_pairs"]  # [(doc_a, doc_b, score), ...], highest first
+results["clusters"]   # [{"documents": [...], "avg_similarity": ..., ...}, ...]
 ```
 
-## 🔧 Configurazione
+## How it works
 
-Modifica `pyproject.toml` per personalizzare:
-- Soglia di similarità
-- Parametri DPI per conversione PDF
-- Algoritmi di clustering
+1. **Rendering and clean-up** ([`pdf_processor.py`](src/handwriting_detector/pdf_processor.py)): pdf2image renders each page in greyscale at the chosen DPI; OpenCV applies a bilateral filter, CLAHE contrast enhancement, adaptive thresholding, non-local-means denoising and a morphological opening.
+2. **Features** ([`feature_extractor.py`](src/handwriting_detector/feature_extractor.py)): 15 statistics per page, averaged over the document: stroke width (distance transform), slant (ellipses fitted to connected components), gaps in the column and row projection profiles, ink density, component aspect ratio, edge-based smoothness, contour curvature (mean and standard deviation), horizontal, vertical and diagonal stroke density, the intensity variance of dark pixels, and the skewness and kurtosis of all pixel intensities.
+3. **Comparison** ([`comparator.py`](src/handwriting_detector/comparator.py)): every pair gets a score in [0, 1], computed as 0.4 × cosine similarity + 0.3 × 1/(1 + Euclidean distance) of the L2-normalised vectors + 0.3 × their Pearson correlation rescaled to [0, 1]. Separately, agglomerative clustering (average linkage) on standardised features, with a distance cut-off of 1 − threshold, forms the groups; groups of two or more documents are reported.
+4. **Report** ([`visualizer.py`](src/handwriting_detector/visualizer.py)): writes the files listed above.
 
-## 📈 Output
+## Running the tests
 
-Il sistema genera:
-- **report.html**: Report interattivo con grafici
-- **similarity_matrix.png**: Matrice di similarità tra tutti i documenti
-- **clusters.json**: Gruppi identificati con score di similarità
-- **suspicious_pairs.csv**: Coppie sospette ordinate per similarità
-
-## 🧪 Testing
-
-```bash
-# Esegui tutti i test
+```sh
 uv run pytest
-
-# Con coverage
-uv run pytest --cov=handwriting_detector
-
-# Test specifici
-uv run pytest tests/test_detector.py::test_feature_extraction
 ```
 
-## 🛠️ Tecnologie Utilizzate
+The four unit tests check the feature-vector length, binarisation, the score of two close vectors and the package version. They use synthetic arrays, so they need neither Poppler nor scans. [CI](.github/workflows/ci.yml) runs the same commands on Python 3.13.
 
-- **OpenCV**: Elaborazione immagini
-- **scikit-learn**: Machine learning e clustering
-- **pdf2image**: Conversione PDF
-- **NumPy**: Calcoli numerici
-- **Matplotlib/Seaborn**: Visualizzazioni
-- **uv**: Gestione dipendenze e ambiente
+## Student data
 
-## 📋 Algoritmo
+Scanned exercises and the reports derived from them are personal data. `data/input/` and `data/output/` are gitignored apart from their `.gitkeep` files, so scans and results kept there stay out of version control. Document names, taken from the file names, appear in the log, the heatmap, the CSV and the HTML report: use pseudonyms if a report has to leave your machine.
 
-1. **Conversione**: PDF → Immagini (alta risoluzione)
-2. **Preprocessing**: Binarizzazione, rimozione rumore
-3. **Feature Extraction**:
-   - Densità inchiostro
-   - Inclinazione scrittura
-   - Spaziatura caratteri
-   - Distribuzione tratti
-   - Pattern ricorrenti
-4. **Comparazione**: Calcolo similarità coseno tra features
-5. **Clustering**: DBSCAN per identificare gruppi
-6. **Report**: Generazione risultati e visualizzazioni
+## Limitations
 
-## 📄 Licenza
+- It ranks similarity; it does not identify writers or prove copying. A high score is a reason to compare the sheets side by side, never evidence on its own, and the HTML report carries the same warning.
+- The features are page-level statistics. Besides the writer, they depend on scan quality, resolution, pen, paper ruling and the amount and layout of the written content.
+- Scores are not calibrated. The pairwise score uses unscaled features, so a few large-valued ones (projection gaps in pixels, slant in degrees, intensity kurtosis) carry most of the weight: in a check with four synthetic typed pages, two different typefaces scored 0.96, above the default threshold.
+- Clustering uses a different scale (Euclidean distance between standardised features), so a pair above the threshold need not end up in a group; the two typefaces above did not.
+- The repository contains no labelled data or accuracy evaluation.
+- `HandwritingDetector.find_plagiarism_groups()` is a placeholder that returns an empty list; use the result of `analyze_folder()`.
 
-MIT License
+## License
 
-## 👥 Contributi
-
-Contributi benvenuti! Apri una issue o pull request.
-
-## 📞 Supporto
-
-Per problemi o domande, apri una issue su GitHub.
+[MIT](LICENSE)
