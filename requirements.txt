@@ -13,7 +13,7 @@ pillow==13.0.0
 pyparsing==3.3.3
 pytesseract==0.3.13
 python-dateutil==3.0.0
-pytz==2025.2
+pytz==2026.5
 scikit-learn==1.9.1
 scipy==1.17.1
 seaborn==0.13.2
